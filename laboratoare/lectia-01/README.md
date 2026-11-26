@@ -41,6 +41,27 @@ docker exec devops-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
 
 Nu copia parola în fișiere sau dovezi. Creează administratorul și instalează **Pipeline, Git și JUnit**, cu dependențele cerute. Notează versiunile pluginurilor. Dacă volumul păstrează deja configurarea Jenkins, autentifică-te cu administratorul existent; nu reseta datele.
 
+#### Dacă pluginurile nu se instalează (firewall Zscaler)
+
+Simptome: wizardul sare peste pluginuri, **Manage Jenkins → Plugins → Available** e gol sau `docker logs devops-jenkins` conține `PKIX path building failed`. Cauza: firewall-ul companiei (Zscaler) inspectează HTTPS și semnează traficul cu certificatul propriu. WSL are acest certificat în `/usr/local/share/ca-certificates/`, containerul Jenkins nu.
+
+Verifică singur, din WSL și din container:
+
+```bash
+echo | openssl s_client -connect updates.jenkins.io:443 2>/dev/null | grep 'i:'   # emitent Zscaler = inspecție TLS
+docker exec devops-jenkins curl -sS -o /dev/null https://updates.jenkins.io/        # eroare SSL = containerul nu are certificatul
+```
+
+Importă certificatul în Java-ul containerului și repornește Jenkins (JVM-ul citește certificatele doar la pornire):
+
+```bash
+docker cp /usr/local/share/ca-certificates/zscaler-ca.crt devops-jenkins:/tmp/zscaler-ca.crt
+docker exec -u 0 devops-jenkins keytool -importcert -noprompt -cacerts -storepass changeit -alias zscaler-root -file /tmp/zscaler-ca.crt
+docker restart devops-jenkins
+```
+
+Apoi instalează pluginurile din **Manage Jenkins → Plugins → Available plugins**. Certificatul rezistă la `docker restart`, dar se pierde dacă recreezi containerul: repetă atunci importul.
+
 ### Agentul de build din WSL
 
 Controllerul coordonează; buildurile rulează ca proces separat în WSL, unde ai deja Java și Git. Nu este necesar SSH sau portul 50000: folosim WebSocket.
@@ -104,6 +125,23 @@ chmod +x gradlew
 `bootJar` produce JAR-ul executabil în `build/libs/`. `bootRun` pornește aplicația pe portul 8080, rămâne în prim-plan și se oprește cu Ctrl+C. Rulează comenzile HTTP de verificare într-un alt terminal.
 
 Nu instala Gradle global. Versiunea Gradle este fixată de wrapper: comite `gradlew` cu permisiune de execuție, `gradlew.bat`, fișierele din `gradle/wrapper/`, `build.gradle` și `settings.gradle`. Exclude `build/` și `.gradle/` din Git. Configurează remote-ul în repository-ul aplicației, nu în folderul cu planul.
+
+#### 4. Creează repository-ul Git în `~/task-tracker`, nu în `backend/`
+
+Rulează `git init` în rădăcină. Altfel Jenkinsfile-ul din `~/task-tracker` nu intră în Git, iar `dir('backend')` din lecția 02 nu va găsi nimic.
+
+```bash
+cd "$HOME/task-tracker"
+git init -b main
+printf '%s\n' '*:sec.endpointdlp' > .gitignore   # fișiere create de agentul DLP Windows la copiere
+git add .
+git status            # trebuie să vezi backend/build.gradle, nu build.gradle direct
+git commit -m "Proiect inițial"
+git remote add origin https://github.com/<utilizator>/task-tracker.git
+git push -u origin main
+```
+
+Pe GitHub, rădăcina repository-ului trebuie să conțină folderul `backend/` (și, din lecția 02, `Jenkinsfile`). Notează numele branchului (`git branch --show-current`); îl vei folosi în Jenkins.
 
 ## Verificare și lucru
 

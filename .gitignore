@@ -1,0 +1,23 @@
+/Plan fast learning DevOps 8 săptămâni.pdf
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+*.pem
+*.p12
+*.jks
+*kubeconfig*
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.venv/
+.gradle/
+build/
+node_modules/
+dist/
+*.tar
+*.tar.gz
+*.zip
+*.log
